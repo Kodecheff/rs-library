@@ -2,6 +2,8 @@
 use tokio_postgres::{NoTls, Error};
 use std::collections::HashMap;
 use serde::Serialize;
+use dotenv::dotenv;
+use std::env;
 
 
 #[derive(Serialize, Debug)]
@@ -30,9 +32,22 @@ struct Author {
 #[tokio::main]
 async fn main() -> Result<(), Error> {
 
+    // Load environment variable
+    dotenv().ok();
+
+    let db_username = env::var("DB_USERNAME").expect("Database username variable is not found");
+    let db_password = env::var("DB_PASSWORD").expect("Database password variable is not found");
+    let db_name = env::var("DB_NAME").expect("Database name variable is not found");
+    let db_hostname = env::var("DB_HOSTNAME").expect("Database hostname variable is not found");
+    let db_port = env::var("DB_PORT").expect("Database port variable is not found");
+
+
+    // Shelf table sections
     let sections = ["History", "Tech", "Physics"];
+
+    let connection_url = format!("postgres://{db_username}:{db_password}@{db_hostname}:{db_port}/{db_name}");
     
-    let (client, connection) = tokio_postgres::connect("postgres://khal:12345@localhost:5432/rs_library", NoTls).await?;
+    let (client, connection) = tokio_postgres::connect(&connection_url, NoTls).await?;
     
     tokio::spawn(async move {
         if let Err(e) = connection.await {
