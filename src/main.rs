@@ -1,30 +1,38 @@
 // use postgres::{Client, NoTls, Error};
 use tokio_postgres::{NoTls, Error};
 use std::collections::HashMap;
+use serde::Serialize;
 
+
+#[derive(Serialize, Debug)]
 struct Shelf {
     _id: i32,
-    book: String,
-    collection: String
+    section: String
 }
 
+
+#[derive(Serialize, Debug)]
 struct Book {
     _id: i32,
     title: String,
-    author_id: i32
+    author_id: i32,
+    shelf_id: i32
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Debug)]
 struct Author {
     _id: i32,
     name: String,
     country: String
 }
 
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
+
+    let sections = ["History", "Tech", "Physics"];
     
-    let (mut client, mut connection) = tokio_postgres::connect("postgres://khal:12345@localhost:5432/rs_library", NoTls).await?;
+    let (client, connection) = tokio_postgres::connect("postgres://khal:12345@localhost:5432/rs_library", NoTls).await?;
     
     tokio::spawn(async move {
         if let Err(e) = connection.await {
@@ -56,13 +64,13 @@ async fn main() -> Result<(), Error> {
         )
     ").await?;
 
-    let mut authors = HashMap::new();
+    let mut authors_map = HashMap::new();
 
-    authors.insert(String::from("Pascal Akunne"), "Nigeria");
-    authors.insert(String::from("Alec Sandler"), "England");
-    authors.insert(String::from("Matt Simon"), "USA");
+    authors_map.insert(String::from("Pascal Akunne"), "Nigeria");
+    authors_map.insert(String::from("Alec Sandler"), "England");
+    authors_map.insert(String::from("Matt Simon"), "USA");
 
-    for (key, val) in &authors{
+    for (key, val) in &authors_map{
         let author = Author{
             _id: 0,
             name: key.to_string(),
@@ -84,18 +92,32 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    client.execute(
-        "INSERT INTO shelf(section) VALUES ($1), ($2), ($3)",
-        &[&"History", &"Biology", &"Physics"]
-    ).await?;
+
+    // loop through the sections array
+    for section in sections{
+
+        // query the shelf table to see if the section name already exists
+        let data = client.query(
+            "SELECT * FROM shelf WHERE section = $1",
+            &[&section]
+        ).await?;
+
+        // insert if it does not exist
+        if data.len() == 0 {
+
+            client.execute(
+                "INSERT INTO shelf(section) VALUES ($1)",
+                &[&section]
+            ).await?;
+        }
+    }
 
 
     let author_rows = client.query("SELECT id, name, country FROM author", &[]).await?;
-
     let shelf_rows = client.query("SELECT id, section FROM shelf", &[]).await?;
 
 
-    let author_collection: Vec<Author> = author_rows.iter().map(|row| {
+    let authors: Vec<Author> = author_rows.iter().map(|row| {
         Author {
             _id: row.get(0),
             name: row.get(1),
@@ -103,21 +125,54 @@ async fn main() -> Result<(), Error> {
         }
     }).collect();
 
-    for author in &author_collection{
+    for author in &authors{
 
-        println!("{:?}", author);
+        println!("AUTHORS: {:?}", author);
 
     }
 
-    // for shelf_row in shelf_rows{
-    //     let shelf_id: i32 = shelf_row.get(0);
-    //     let shelf_section: String = shelf_row.get(1);
+    let shelves: Vec<Shelf> = shelf_rows.iter().map(|row| {
+        Shelf{
+            _id: row.get(0),
+            section: row.get(1)
+        }
+    }).collect();
 
-    //     println!("\n{}, {}", shelf_id, shelf_section)
-    // }
+    for shelf in &shelves{
+        println!("SHELF: {:?}", shelf);
+    }
 
-    // println!("Author: {:#?}", result.get(0).unwrap());
-    // println!("Shelf: {:#?}", shelfs);
+    client.execute(
+        "INSERT INTO book(title, author_id, shelf_id) VALUES
+        ($1, $2, $3),
+        ($4, $5, $6),
+        ($7, $8, $9)
+        ",
+        
+        &[
+            &"JavaScript to Rust", &authors[2]._id, &shelves[1]._id,
+            &"Civil war", &authors[1]._id, &shelves[0]._id,
+            &"The world we see", &authors[0]._id, &shelves[2]._id
+        ]
+    ).await?;
+
+    println!("Books created successfully");
+
+    let book_rows = client.query("SELECT id, title, author_id, shelf_id FROM book", &[]).await?;
+
+    let books: Vec<Book> = book_rows.iter().map(|row| {
+        Book{
+            _id: row.get(0),
+            title: row.get(1),
+            author_id: row.get(2),
+            shelf_id: row.get(3)
+        }
+    }).collect();
+
+    for book in &books{
+        println!("{:?}", book)
+    }
+
 
     Ok(())
 }
